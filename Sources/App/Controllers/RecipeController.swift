@@ -12,11 +12,10 @@ struct RecipeController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let recipes = routes.grouped("api","recipes")
         recipes.get(use: getRecipes)
-        //recipes.get(":recipeID", use: getRecipe)
+        recipes.get(":recipeId", use: getRecipe)
+        recipes.get("start", ":start", "end", ":end", use: getRecipesByRange)
         recipes.post("add", use: createRecipe)
-        recipes.group(":recipeID") { recipe in
-            recipe.delete(use: delete)
-        }
+        recipes.delete(":recipeId", use: delete)
         recipes.delete("deleteAll", use: deleteAll)
     }
 
@@ -24,8 +23,19 @@ struct RecipeController: RouteCollection {
         return Recipe.query(on: req.db).all()
     }
     
+    
+    func getRecipesByRange(req: Request) throws -> EventLoopFuture<[Recipe]> {
+        guard let startText = req.parameters.get("start"), let start = Int(startText),
+        let endText = req.parameters.get("end"), let end = Int(endText)  else {
+            throw Abort(.badRequest)
+        }
+        let range = start...end
+        return Recipe.query(on: req.db).range(range).all()
+    }
+    
+    
     func getRecipe(req: Request) throws -> EventLoopFuture<Recipe>  {
-        return Recipe.find(req.parameters.get("recipeID"), on: req.db)
+        return Recipe.find(req.parameters.get("recipeId"), on: req.db)
             .unwrap(or: Abort(.notFound))
     }
 
@@ -35,7 +45,7 @@ struct RecipeController: RouteCollection {
     }
 
     func delete(req: Request) throws -> EventLoopFuture<HTTPStatus> {
-        return Recipe.find(req.parameters.get("recipeID"), on: req.db)
+        return Recipe.find(req.parameters.get("recipeId"), on: req.db)
             .unwrap(or: Abort(.notFound))
             .flatMap { $0.delete(on: req.db) }
             .transform(to: .ok)
@@ -46,24 +56,4 @@ struct RecipeController: RouteCollection {
                 Recipe.query(on: req.db).delete()
             }.transform(to: .ok)
     }
-    
-    func importTestData(_ req: Request) throws -> EventLoopFuture<[Todo]> {
-       // create & save a category
-       return TodoCategory(title: "Blog").save(on: req).flatMap { category in
-
-           // create some todos
-           let todos = try [
-               Todo(title: "Clean up my desk", categoryID: category.requireID()),
-               Todo(title: "Install all updates", categoryID: category.requireID()),
-               Todo(title: "Prepare medium blog post", categoryID: category.requireID()),
-               Todo(title: "Play with the kids"),
-               Todo(title: "Write medium blog post", categoryID: category.requireID()),
-               Todo(title: "Publish medium blog post", categoryID: category.requireID())
-           ]
-
-           return todos
-               .map({ $0.save(on: req) })
-               .flatten(on: req)
-       }
-   }
 }
